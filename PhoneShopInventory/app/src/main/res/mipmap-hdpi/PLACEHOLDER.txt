@@ -1,0 +1,5 @@
+Placeholder folder for launcher icons.
+Add ic_launcher.png and ic_launcher_round.png (72x72) here, plus icons in
+mipmap-mdpi (48), mipmap-xhdpi (96), mipmap-xxhdpi (144), mipmap-xxxhdpi (192).
+Until then the manifest reference @mipmap/ic_launcher will fail the build;
+you may temporarily remove android:icon / android:roundIcon to build.
