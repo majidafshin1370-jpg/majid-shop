@@ -61,7 +61,8 @@ object ProductPhotos {
     fun save(context: Context, uuid: String, open: () -> InputStream?): Long? {
         return try {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            open()?.use { BitmapFactory.decodeStream(it, null, bounds) } ?: return null
+            // With inJustDecodeBounds the decoder returns no bitmap, only the size; that is expected.
+            (open() ?: return null).use { BitmapFactory.decodeStream(it, null, bounds) }
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
             val opts = BitmapFactory.Options().apply {
