@@ -408,12 +408,18 @@ fun FormScreen(vm: InventoryViewModel, productId: String, onDone: () -> Unit) {
     var photoAt by rememberSaveable(productId) { mutableStateOf(existing?.photoAt ?: 0L) }
     var scanning by rememberSaveable { mutableStateOf(false) }
     var problems by remember { mutableStateOf<List<String>?>(null) }
+    var photoError by remember { mutableStateOf<String?>(null) }
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
     fun photoSaved(at: Long?) {
-        if (at != null) photoAt = at else error = "عکس خوانده نشد؛ دوباره امتحان کنید."
+        if (at != null) {
+            photoAt = at
+            photoError = null
+        } else {
+            photoError = "عکس ذخیره نشد؛ دوباره امتحان کنید."
+        }
     }
 
     val captureFile = remember { File(File(context.cacheDir, "capture").apply { mkdirs() }, "photo.jpg") }
@@ -431,7 +437,7 @@ fun FormScreen(vm: InventoryViewModel, productId: String, onDone: () -> Unit) {
         takePicture.launch(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", captureFile))
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted) startCamera() else error = "برای عکس گرفتن اجازه‌ی دوربین لازم است."
+        if (granted) startCamera() else photoError = "برای عکس گرفتن اجازه‌ی دوربین لازم است."
     }
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
@@ -539,6 +545,7 @@ fun FormScreen(vm: InventoryViewModel, productId: String, onDone: () -> Unit) {
                         Text(" از گالری", fontSize = 12.sp)
                     }
                 }
+                photoError?.let { Text(it, color = Red, fontSize = 12.sp, modifier = Modifier.padding(top = 6.dp)) }
             }
             WhiteCard {
                 SectionTitle("مشخصات کالا")
