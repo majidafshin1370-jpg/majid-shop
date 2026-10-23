@@ -120,9 +120,40 @@ CREATE TABLE IF NOT EXISTS history (
     seq        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_history_seq ON history(seq);
+
+CREATE TABLE IF NOT EXISTS cheques (
+    id         TEXT PRIMARY KEY,
+    direction  TEXT NOT NULL,
+    amount     INTEGER NOT NULL,
+    number     TEXT NOT NULL,
+    bank       TEXT NOT NULL,
+    party      TEXT NOT NULL,
+    due_date   TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    debtor_id  TEXT NOT NULL,
+    note       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted    INTEGER NOT NULL,
+    seq        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cheques_seq ON cheques(seq);
+
+CREATE TABLE IF NOT EXISTS expenses (
+    id         TEXT PRIMARY KEY,
+    category   TEXT NOT NULL,
+    amount     INTEGER NOT NULL,
+    date       TEXT NOT NULL,
+    note       TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deleted    INTEGER NOT NULL,
+    seq        INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_expenses_seq ON expenses(seq);
 """
 
-TABLES = ("products", "debtors", "payments", "sales", "history")
+TABLES = ("products", "debtors", "payments", "sales", "history", "cheques", "expenses")
 
 # Columns added after the first release: older databases get them here.
 NEW_COLUMNS = (
@@ -227,6 +258,33 @@ class HistoryEntry(BaseModel):
         return self.at
 
 
+class Cheque(BaseModel):
+    id: str = Field(min_length=8, max_length=64)
+    direction: str = Field(default="", max_length=12)
+    amount: int = Field(default=0, ge=0, le=MONEY)
+    number: str = Field(default="", max_length=40)
+    bank: str = Field(default="", max_length=60)
+    party: str = Field(default="", max_length=120)
+    dueDate: str = Field(default="", max_length=12)
+    status: str = Field(default="", max_length=12)
+    debtorId: str = Field(default="", max_length=64)
+    note: str = Field(default="", max_length=1000)
+    createdAt: int = Field(ge=0)
+    updatedAt: int = Field(ge=0)
+    deleted: bool = False
+
+
+class Expense(BaseModel):
+    id: str = Field(min_length=8, max_length=64)
+    category: str = Field(default="", max_length=60)
+    amount: int = Field(default=0, ge=0, le=MONEY)
+    date: str = Field(default="", max_length=12)
+    note: str = Field(default="", max_length=1000)
+    createdAt: int = Field(ge=0)
+    updatedAt: int = Field(ge=0)
+    deleted: bool = False
+
+
 class SyncRequest(BaseModel):
     cursor: int = Field(default=0, ge=0)
     changes: List[Product] = Field(default_factory=list, max_length=1000)
@@ -234,6 +292,8 @@ class SyncRequest(BaseModel):
     payments: List[Payment] = Field(default_factory=list, max_length=1000)
     sales: List[Sale] = Field(default_factory=list, max_length=1000)
     history: List[HistoryEntry] = Field(default_factory=list, max_length=1000)
+    cheques: List[Cheque] = Field(default_factory=list, max_length=1000)
+    expenses: List[Expense] = Field(default_factory=list, max_length=1000)
 
 
 class SyncResponse(BaseModel):
@@ -243,6 +303,8 @@ class SyncResponse(BaseModel):
     payments: List[Payment]
     sales: List[Sale]
     history: List[HistoryEntry]
+    cheques: List[Cheque]
+    expenses: List[Expense]
 
 
 def require_token(authorization: str = Header(default="")):
@@ -289,6 +351,16 @@ SPECS = {
         ("debtor_id", "debtorId"), ("credit_amount", "creditAmount"), ("note", "note"),
         ("created_at", "createdAt"), ("updated_at", "updatedAt"), ("deleted", "deleted"),
     ]),
+    "cheques": ("id", [
+        ("direction", "direction"), ("amount", "amount"), ("number", "number"), ("bank", "bank"),
+        ("party", "party"), ("due_date", "dueDate"), ("status", "status"), ("debtor_id", "debtorId"),
+        ("note", "note"), ("created_at", "createdAt"), ("updated_at", "updatedAt"),
+        ("deleted", "deleted"),
+    ]),
+    "expenses": ("id", [
+        ("category", "category"), ("amount", "amount"), ("date", "date"), ("note", "note"),
+        ("created_at", "createdAt"), ("updated_at", "updatedAt"), ("deleted", "deleted"),
+    ]),
     "history": ("id", [
         ("at_ms", "at"), ("who", "who"), ("kind", "kind"), ("title", "title"),
         ("detail", "detail"), ("updated_at", "updatedAt"),
@@ -331,6 +403,21 @@ def read_since(conn: sqlite3.Connection, table: str, cursor: int):
 def row_to_history(r: sqlite3.Row) -> HistoryEntry:
     return HistoryEntry(
         id=r["id"], at=r["at_ms"], who=r["who"], kind=r["kind"], title=r["title"], detail=r["detail"],
+    )
+
+
+def row_to_cheque(r: sqlite3.Row) -> Cheque:
+    return Cheque(
+        id=r["id"], direction=r["direction"], amount=r["amount"], number=r["number"], bank=r["bank"],
+        party=r["party"], dueDate=r["due_date"], status=r["status"], debtorId=r["debtor_id"],
+        note=r["note"], createdAt=r["created_at"], updatedAt=r["updated_at"], deleted=bool(r["deleted"]),
+    )
+
+
+def row_to_expense(r: sqlite3.Row) -> Expense:
+    return Expense(
+        id=r["id"], category=r["category"], amount=r["amount"], date=r["date"], note=r["note"],
+        createdAt=r["created_at"], updatedAt=r["updated_at"], deleted=bool(r["deleted"]),
     )
 
 
@@ -386,16 +473,22 @@ def sync(req: SyncRequest):
         seq = upsert_all(conn, "payments", req.payments, seq)
         seq = upsert_all(conn, "sales", req.sales, seq)
         seq = upsert_all(conn, "history", req.history, seq)
+        seq = upsert_all(conn, "cheques", req.cheques, seq)
+        seq = upsert_all(conn, "expenses", req.expenses, seq)
 
         product_rows = read_since(conn, "products", req.cursor)
         debtor_rows = read_since(conn, "debtors", req.cursor)
         payment_rows = read_since(conn, "payments", req.cursor)
         sale_rows = read_since(conn, "sales", req.cursor)
         history_rows = read_since(conn, "history", req.cursor)
+        cheque_rows = read_since(conn, "cheques", req.cursor)
+        expense_rows = read_since(conn, "expenses", req.cursor)
         conn.commit()
 
     all_seqs = [
-        r["seq"] for rows in (product_rows, debtor_rows, payment_rows, sale_rows, history_rows) for r in rows
+        r["seq"]
+        for rows in (product_rows, debtor_rows, payment_rows, sale_rows, history_rows, cheque_rows, expense_rows)
+        for r in rows
     ]
     return SyncResponse(
         cursor=max([req.cursor] + all_seqs),
@@ -404,6 +497,8 @@ def sync(req: SyncRequest):
         payments=[row_to_payment(r) for r in payment_rows],
         sales=[row_to_sale(r) for r in sale_rows],
         history=[row_to_history(r) for r in history_rows],
+        cheques=[row_to_cheque(r) for r in cheque_rows],
+        expenses=[row_to_expense(r) for r in expense_rows],
     )
 
 
